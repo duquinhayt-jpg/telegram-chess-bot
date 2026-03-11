@@ -62,13 +62,26 @@ def stockfish_move(board: chess.Board, depth: int):
 
         r = requests.get(url, params=params, timeout=10)
 
+        if r.status_code != 200:
+            print("Erro HTTP:", r.status_code)
+            return None
+
         data = r.json()
 
-        bestmove = data["bestmove"].split(" ")[1]
+        print("Resposta API:", data)
+
+        if "bestmove" not in data:
+            return None
+
+        bestmove = data["bestmove"]
+
+        if " " in bestmove:
+            bestmove = bestmove.split(" ")[1]
 
         return chess.Move.from_uci(bestmove)
 
-    except Exception:
+    except Exception as e:
+        print("Erro Stockfish:", e)
         return None
 
 
@@ -313,3 +326,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado")
 
 app.run_polling()
+
