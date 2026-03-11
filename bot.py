@@ -1,4 +1,5 @@
 import os
+import stat
 import chess
 import chess.engine
 import atexit
@@ -12,12 +13,11 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
+TOKEN = "SEU_TOKEN"
 
 ENGINE_PATH = "./stockfish"
 
-# garantir permissão de execução
-os.chmod(ENGINE_PATH, 0o755)
+os.chmod(ENGINE_PATH, stat.S_IRWXU)
 
 engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
 
@@ -203,3 +203,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado")
 
 app.run_polling()
+
