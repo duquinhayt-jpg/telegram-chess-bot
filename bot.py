@@ -684,34 +684,30 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ESCOLHER PEÇAS
     if query.data.startswith("cor_"):
         esperando_resumo.discard(user_id)
-
+    
         cor = query.data.split("_")[1]
         difficulty = get_difficulty(user_id)
         board = chess.Board()
         game_id = create_game(user_id, cor, difficulty)
-
+    
         jogos[user_id] = {
             "board": board,
             "color": cor,
             "difficulty": difficulty,
             "game_id": game_id,
         }
-
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-
+    
         await query.edit_message_text(
             text=texto_inicio_partida(user_id),
             parse_mode="Markdown"
         )
-
-        # se joga de pretas, o bot move a seguir e manda outra mensagem sem tabuleiro
+    
+        # se joga de pretas, o bot joga primeiro
         if cor == "black":
             try:
                 bot_move = stockfish_move(board, difficulty)
                 board.push(bot_move)
+    
                 await enviar_mensagem_jogada_bot(
                     context=context,
                     chat_id=chat_id,
@@ -719,19 +715,24 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     bot_move=bot_move.uci(),
                     mostrar_tabuleiro=False
                 )
+    
             except Exception:
+    
                 moves = " ".join([m.uci() for m in board.move_stack])
+    
                 finish_game(game_id, "unfinished", moves)
+    
                 del jogos[user_id]
-
+    
                 erro = await context.bot.send_message(
                     chat_id=chat_id,
                     text="❌ *Erro ao comunicar com o Stockfish.*",
                     parse_mode="Markdown",
                     reply_markup=menu_principal()
                 )
+    
                 registar_mensagem(user_id, erro.message_id)
-
+    
         return
 
     # ESTATÍSTICAS
@@ -1072,3 +1073,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
