@@ -13,17 +13,14 @@ from telegram.ext import (
 
 TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
-# Caminho do Stockfish local
-ENGINE_PATH = "./stockfish.exe"
+ENGINE_PATH = "./stockfish"
 
 engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
+
 atexit.register(engine.quit)
 
-# Guardar jogos por utilizador
 jogos = {}
 
-
-# ---------------- MENUS ---------------- #
 
 def menu_inicial():
     return InlineKeyboardMarkup([
@@ -50,21 +47,22 @@ def menu_jogo():
     ])
 
 
-# ---------------- STOCKFISH ---------------- #
-
 def stockfish_move(board, level):
 
-    skill = {1: 3, 2: 10, 3: 20}
-    think = {1: 0.05, 2: 0.2, 3: 0.6}
+    if level == 1:
+        engine.configure({"Skill Level": 3})
+        result = engine.play(board, chess.engine.Limit(time=0.05))
 
-    engine.configure({"Skill Level": skill[level]})
+    elif level == 2:
+        engine.configure({"Skill Level": 10})
+        result = engine.play(board, chess.engine.Limit(time=0.2))
 
-    result = engine.play(board, chess.engine.Limit(time=think[level]))
+    else:
+        engine.configure({"Skill Level": 20})
+        result = engine.play(board, chess.engine.Limit(time=1.0))
 
     return result.move
 
-
-# ---------------- COMANDOS ---------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -77,8 +75,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=menu_inicial()
     )
 
-
-# ---------------- BOTÕES ---------------- #
 
 async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -135,13 +131,12 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# ---------------- JOGADAS ---------------- #
-
 async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.message.from_user.id
 
     if user not in jogos:
+
         await update.message.reply_text(
             "Usa /start para iniciar um jogo."
         )
@@ -157,6 +152,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         move = chess.Move.from_uci(texto)
 
         if move not in board.legal_moves:
+
             await update.message.reply_text(
                 "❌ Jogada inválida.",
                 reply_markup=menu_jogo()
@@ -179,17 +175,6 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         board.push(bot_move)
 
-        if board.is_checkmate():
-
-            await update.message.reply_text(
-                f"🤖 Bot jogou: *{bot_move}*\n\n💀 Checkmate! O bot venceu.",
-                parse_mode="Markdown",
-                reply_markup=menu_inicial()
-            )
-
-            del jogos[user]
-            return
-
         await update.message.reply_text(
             f"🤖 Bot jogou: *{bot_move}*",
             parse_mode="Markdown",
@@ -204,8 +189,6 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=menu_jogo()
         )
 
-
-# ---------------- APP ---------------- #
 
 app = ApplicationBuilder().token(TOKEN).build()
 
