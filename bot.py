@@ -1,3 +1,4 @@
+import os
 import chess
 import chess.engine
 import atexit
@@ -14,6 +15,9 @@ from telegram.ext import (
 TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 ENGINE_PATH = "./stockfish"
+
+# garantir permissão de execução
+os.chmod(ENGINE_PATH, 0o755)
 
 engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
 
