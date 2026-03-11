@@ -1,5 +1,4 @@
 import chess
-from stockfish import Stockfish
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -7,7 +6,15 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-stockfish = Stockfish(path="/usr/games/stockfish")
+# tentativa de iniciar stockfish
+try:
+    from stockfish import Stockfish
+    stockfish = Stockfish(path="/usr/games/stockfish")
+    stockfish.set_skill_level(10)
+    print("Stockfish iniciado")
+except:
+    stockfish = None
+    print("Stockfish não encontrado - bot continua sem IA")
 
 
 def menu_inicial():
@@ -26,15 +33,8 @@ def menu_jogo():
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = (
-        "♟️ Bot de Xadrez\n\n"
-        "Joga contra a IA.\n\n"
-        "Exemplo de jogada:\n"
-        "e2e4"
-    )
-
     await update.message.reply_text(
-        texto,
+        "♟️ Bot de Xadrez\n\nClique para começar.",
         reply_markup=menu_inicial()
     )
 
@@ -47,36 +47,10 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "novo_jogo":
 
-        teclado = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🟢 Fácil", callback_data="facil"),
-                InlineKeyboardButton("🟡 Médio", callback_data="medio"),
-                InlineKeyboardButton("🔴 Difícil", callback_data="dificil")
-            ]
-        ])
-
-        await query.edit_message_text(
-            "Escolhe a dificuldade:",
-            reply_markup=teclado
-        )
-
-    elif query.data in ["facil", "medio", "dificil"]:
-
         jogos[user] = chess.Board()
 
-        if query.data == "facil":
-            stockfish.set_skill_level(1)
-
-        elif query.data == "medio":
-            stockfish.set_skill_level(10)
-
-        else:
-            stockfish.set_skill_level(20)
-
         await query.edit_message_text(
-            "Jogo iniciado!\n\n"
-            "Tu jogas com as brancas.\n"
-            "Envia jogadas como: e2e4",
+            "Jogo iniciado!\n\nTu jogas com as brancas.\nEnvia jogadas tipo: e2e4",
             reply_markup=menu_jogo()
         )
 
@@ -125,16 +99,15 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         board.push(move)
 
-        stockfish.set_fen_position(board.fen())
-        bot_move = stockfish.get_best_move()
+        if stockfish:
+            stockfish.set_fen_position(board.fen())
+            bot_move = stockfish.get_best_move()
 
-        if bot_move:
-            board.push(chess.Move.from_uci(bot_move))
-
-        await update.message.reply_text(
-            f"🤖 Bot jogou: {bot_move}",
-            reply_markup=menu_jogo()
-        )
+            if bot_move:
+                board.push(chess.Move.from_uci(bot_move))
+                await update.message.reply_text(f"🤖 Bot jogou: {bot_move}")
+        else:
+            await update.message.reply_text("Jogada registada.")
 
     except:
         await update.message.reply_text("Formato inválido. Use e2e4")
