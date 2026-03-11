@@ -311,9 +311,10 @@ def menu_historico_sem_resumo():
     ])
 
 
-def menu_mostrar_tabuleiro():
+def menu_jogo():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👁 Mostrar tabuleiro", callback_data="show_board")]
+        [InlineKeyboardButton("👁 Mostrar tabuleiro", callback_data="show_board")],
+        [InlineKeyboardButton("🏳️ Desistir", callback_data="resign")]
     ])
 
 # =========================================================
@@ -596,7 +597,7 @@ async def enviar_mensagem_jogada_bot(
     bot_move: str,
     mostrar_tabuleiro: bool = False
 ):
-    reply_markup = None if mostrar_tabuleiro else menu_mostrar_tabuleiro()
+    reply_markup = None if mostrar_tabuleiro else menu_jogo()
 
     msg = await context.bot.send_message(
         chat_id=chat_id,
@@ -831,6 +832,37 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if query.data == "resign":
+        if user_id not in jogos:
+            await query.edit_message_text(
+                text="❗ Não existe jogo ativo.",
+                reply_markup=menu_principal()
+            )
+            return
+
+        jogo = jogos[user_id]
+        board = jogo["board"]
+    
+        moves = " ".join([m.uci() for m in board.move_stack])
+    
+        finish_game(jogo["game_id"], "resign", moves)
+        add_result(user_id, "loss")
+    
+        del jogos[user_id]
+    
+        await limpar_mensagens_controladas(context, chat_id, user_id)
+
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text="🏳️ *Desististe da partida.*\n\n🤖 O bot venceu.",
+            parse_mode="Markdown",
+            reply_markup=menu_principal()
+        )
+    
+        registar_mensagem(user_id, msg.message_id)
+    
+        return
+
 # =========================================================
 # JOGADAS
 # =========================================================
@@ -1030,3 +1062,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
