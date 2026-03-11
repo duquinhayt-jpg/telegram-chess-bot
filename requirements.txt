@@ -1,3 +1,2 @@
-python-chess
 python-telegram-bot
-requests
+python-chess
