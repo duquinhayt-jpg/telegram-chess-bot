@@ -1,4 +1,5 @@
 import chess
+import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -13,15 +14,10 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-valores = {
-    chess.PAWN: 100,
-    chess.KNIGHT: 320,
-    chess.BISHOP: 330,
-    chess.ROOK: 500,
-    chess.QUEEN: 900,
-    chess.KING: 20000,
-}
 
+# -----------------------------
+# MENUS
+# -----------------------------
 
 def menu_inicial():
     return InlineKeyboardMarkup([
@@ -38,101 +34,38 @@ def menu_jogo():
     ])
 
 
-def avaliar_tabuleiro(board: chess.Board) -> int:
-    if board.is_checkmate():
-        if board.turn == chess.WHITE:
-            return -999999
-        else:
-            return 999999
+# -----------------------------
+# STOCKFISH API
+# -----------------------------
 
-    if board.is_stalemate() or board.is_insufficient_material():
-        return 0
+def stockfish_move(board: chess.Board):
 
-    score = 0
+    try:
+        url = "https://stockfish.online/api/s/v2.php"
 
-    for _, piece in board.piece_map().items():
-        valor = valores[piece.piece_type]
-        if piece.color == chess.WHITE:
-            score += valor
-        else:
-            score -= valor
+        params = {
+            "fen": board.fen(),
+            "depth": 15
+        }
 
-    return score
+        r = requests.get(url, params=params, timeout=10)
 
+        data = r.json()
 
-def minimax(board: chess.Board, depth: int, alpha: int, beta: int, maximizing: bool) -> int:
-    if depth == 0 or board.is_game_over():
-        return avaliar_tabuleiro(board)
+        bestmove = data["bestmove"].split(" ")[1]
 
-    if maximizing:
-        max_eval = -9999999
+        return chess.Move.from_uci(bestmove)
 
-        for move in board.legal_moves:
-            board.push(move)
-            eval_score = minimax(board, depth - 1, alpha, beta, False)
-            board.pop()
-
-            if eval_score > max_eval:
-                max_eval = eval_score
-
-            if eval_score > alpha:
-                alpha = eval_score
-
-            if beta <= alpha:
-                break
-
-        return max_eval
-
-    else:
-        min_eval = 9999999
-
-        for move in board.legal_moves:
-            board.push(move)
-            eval_score = minimax(board, depth - 1, alpha, beta, True)
-            board.pop()
-
-            if eval_score < min_eval:
-                min_eval = eval_score
-
-            if eval_score < beta:
-                beta = eval_score
-
-            if beta <= alpha:
-                break
-
-        return min_eval
+    except Exception:
+        return None
 
 
-def melhor_jogada(board: chess.Board, dificuldade: int = 2):
-    melhor_move = None
-
-    if board.turn == chess.WHITE:
-        melhor_score = -9999999
-
-        for move in board.legal_moves:
-            board.push(move)
-            score = minimax(board, dificuldade - 1, -9999999, 9999999, False)
-            board.pop()
-
-            if score > melhor_score:
-                melhor_score = score
-                melhor_move = move
-    else:
-        melhor_score = 9999999
-
-        for move in board.legal_moves:
-            board.push(move)
-            score = minimax(board, dificuldade - 1, -9999999, 9999999, True)
-            board.pop()
-
-            if score < melhor_score:
-                melhor_score = score
-                melhor_move = move
-
-    return melhor_move
-
+# -----------------------------
+# START
+# -----------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
         "♟️ *Bot de Xadrez*\n\n"
         "Joga contra a IA.\n\n"
@@ -148,12 +81,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# -----------------------------
+# NOVO JOGO
+# -----------------------------
+
 async def novo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = update.message.from_user.id
 
     jogos[user] = {
-        "board": chess.Board(),
-        "dificuldade": 2
+        "board": chess.Board()
     }
 
     await update.message.reply_text(
@@ -165,7 +102,12 @@ async def novo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# -----------------------------
+# TABULEIRO
+# -----------------------------
+
 async def tabuleiro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = update.message.from_user.id
 
     if user not in jogos:
@@ -184,16 +126,21 @@ async def tabuleiro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# -----------------------------
+# BOTÕES
+# -----------------------------
+
 async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = update.callback_query
     await query.answer()
 
     user = query.from_user.id
 
     if query.data == "novo":
+
         jogos[user] = {
-            "board": chess.Board(),
-            "dificuldade": 2
+            "board": chess.Board()
         }
 
         await query.edit_message_text(
@@ -205,6 +152,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "tab":
+
         if user not in jogos:
             await query.message.reply_text(
                 "❗ Não existe jogo ativo.",
@@ -221,6 +169,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "sair":
+
         if user in jogos:
             del jogos[user]
 
@@ -231,7 +180,12 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# -----------------------------
+# JOGADA DO JOGADOR
+# -----------------------------
+
 async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = update.message.from_user.id
 
     if user not in jogos:
@@ -242,10 +196,10 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     board = jogos[user]["board"]
-    dificuldade = jogos[user]["dificuldade"]
     texto = update.message.text.strip().lower()
 
     try:
+
         move = chess.Move.from_uci(texto)
 
         if move not in board.legal_moves:
@@ -276,18 +230,22 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del jogos[user]
             return
 
-        bot_move = melhor_jogada(board, dificuldade)
+
+        # -----------------------------
+        # BOT MOVE (STOCKFISH)
+        # -----------------------------
+
+        bot_move = stockfish_move(board)
 
         if bot_move is None:
             await update.message.reply_text(
-                "🤝 *Empate!*",
-                parse_mode="Markdown",
-                reply_markup=menu_inicial()
+                "⚠️ Erro ao contactar a IA.",
+                reply_markup=menu_jogo()
             )
-            del jogos[user]
             return
 
         board.push(bot_move)
+
 
         if board.is_checkmate():
             await update.message.reply_text(
@@ -314,12 +272,17 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     except Exception:
+
         await update.message.reply_text(
             "❗ Formato inválido.\nUsa algo como `e2e4`.",
             parse_mode="Markdown",
             reply_markup=menu_jogo()
         )
 
+
+# -----------------------------
+# APP
+# -----------------------------
 
 app = ApplicationBuilder().token(TOKEN).build()
 
