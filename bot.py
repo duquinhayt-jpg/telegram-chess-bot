@@ -701,13 +701,14 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data.startswith("cfg_"):
         nivel = int(query.data.split("_")[1])
         set_difficulty(user_id, nivel)
-
+    
+        diff_nome = {1: "Fácil", 2: "Médio", 3: "Difícil"}[nivel]
+    
         await query.edit_message_text(
-            text=f"✅ *Dificuldade atualizada para:* *{{1:'Fácil',2:'Médio',3:'Difícil'}[nivel]}*",
+            text=f"✅ *Dificuldade atualizada para:* *{diff_nome}*",
             parse_mode="Markdown",
             reply_markup=menu_config()
         )
-        return
 
     # BOTÕES DURANTE O JOGO
     if query.data == "hide":
@@ -914,4 +915,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
