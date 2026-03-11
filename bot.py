@@ -2,6 +2,7 @@ import os
 import stat
 import atexit
 import sqlite3
+import random
 from datetime import datetime
 
 import chess
@@ -830,4 +831,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
