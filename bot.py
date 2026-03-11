@@ -831,18 +831,30 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=menu_principal()
             )
             return
-
-        board = jogos[user_id]["board"]
-        color = jogos[user_id]["color"]
-
-        await query.edit_message_text(
-            text=(
-                "👁 *Tabuleiro atual*\n\n"
-                f"⏳ Quem joga: *{estado_turno(board, color)}*\n\n"
-                f"```text\n{board_to_unicode(board, color)}\n```"
-            ),
-            parse_mode="Markdown"
+    
+        jogo = jogos[user_id]
+        board = jogo["board"]
+        color = jogo["color"]
+    
+        texto_antigo = query.message.text
+    
+        novo_texto = (
+            texto_antigo +
+            "\n\n👁 *Tabuleiro atual*\n\n"
+            f"```text\n{board_to_unicode(board, color)}\n```"
         )
+    
+        # botão apenas desistir
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏳️ Desistir", callback_data="resign")]
+        ])
+    
+        await query.edit_message_text(
+            text=novo_texto,
+            parse_mode="Markdown",
+            reply_markup=teclado
+        )
+    
         return
 
     if query.data == "resign":
@@ -894,6 +906,12 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # RESUMO DO HISTÓRICO
     if user_id in esperando_resumo:
 
+        # apagar a mensagem do utilizador (o número da partida)
+        try:
+            await update.message.delete()
+        except:
+            pass
+    
         if not texto.isdigit():
             return
     
@@ -1073,4 +1091,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
