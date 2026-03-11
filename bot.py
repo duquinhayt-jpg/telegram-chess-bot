@@ -14,7 +14,6 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-
 # -----------------------------
 # MENUS
 # -----------------------------
@@ -34,18 +33,31 @@ def menu_jogo():
     ])
 
 
+def menu_dificuldade():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🟢 Fácil", callback_data="dif_5"),
+            InlineKeyboardButton("🟡 Médio", callback_data="dif_10")
+        ],
+        [
+            InlineKeyboardButton("🔴 Difícil", callback_data="dif_15"),
+            InlineKeyboardButton("♟️ Impossível", callback_data="dif_20")
+        ]
+    ])
+
 # -----------------------------
 # STOCKFISH API
 # -----------------------------
 
-def stockfish_move(board: chess.Board):
+def stockfish_move(board: chess.Board, depth: int):
 
     try:
+
         url = "https://stockfish.online/api/s/v2.php"
 
         params = {
             "fen": board.fen(),
-            "depth": 15
+            "depth": depth
         }
 
         r = requests.get(url, params=params, timeout=10)
@@ -87,18 +99,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def novo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user = update.message.from_user.id
-
-    jogos[user] = {
-        "board": chess.Board()
-    }
-
     await update.message.reply_text(
-        "♟️ *Novo jogo iniciado!*\n\n"
-        "Tu jogas com as *brancas*.\n"
-        "Envia a tua jogada, por exemplo: `e2e4`",
+        "♟️ *Escolhe a dificuldade do bot:*",
         parse_mode="Markdown",
-        reply_markup=menu_jogo()
+        reply_markup=menu_dificuldade()
     )
 
 
@@ -139,8 +143,20 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "novo":
 
+        await query.edit_message_text(
+            "♟️ *Escolhe a dificuldade do bot:*",
+            parse_mode="Markdown",
+            reply_markup=menu_dificuldade()
+        )
+
+
+    elif query.data.startswith("dif_"):
+
+        depth = int(query.data.split("_")[1])
+
         jogos[user] = {
-            "board": chess.Board()
+            "board": chess.Board(),
+            "dificuldade": depth
         }
 
         await query.edit_message_text(
@@ -150,6 +166,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=menu_jogo()
         )
+
 
     elif query.data == "tab":
 
@@ -168,6 +185,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=menu_jogo()
         )
 
+
     elif query.data == "sair":
 
         if user in jogos:
@@ -181,7 +199,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # -----------------------------
-# JOGADA DO JOGADOR
+# JOGADA
 # -----------------------------
 
 async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,6 +214,8 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     board = jogos[user]["board"]
+    dificuldade = jogos[user]["dificuldade"]
+
     texto = update.message.text.strip().lower()
 
     try:
@@ -221,6 +241,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del jogos[user]
             return
 
+
         if board.is_stalemate() or board.is_insufficient_material():
             await update.message.reply_text(
                 "🤝 *Empate!*",
@@ -231,11 +252,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
 
-        # -----------------------------
-        # BOT MOVE (STOCKFISH)
-        # -----------------------------
-
-        bot_move = stockfish_move(board)
+        bot_move = stockfish_move(board, dificuldade)
 
         if bot_move is None:
             await update.message.reply_text(
@@ -256,6 +273,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del jogos[user]
             return
 
+
         if board.is_stalemate() or board.is_insufficient_material():
             await update.message.reply_text(
                 f"🤖 Bot jogou: *{bot_move}*\n\n🤝 *Empate!*",
@@ -264,6 +282,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             del jogos[user]
             return
+
 
         await update.message.reply_text(
             f"🤖 Bot jogou: *{bot_move}*",
@@ -291,7 +310,6 @@ app.add_handler(CommandHandler("novo", novo))
 app.add_handler(CommandHandler("tabuleiro", tabuleiro))
 app.add_handler(CallbackQueryHandler(botoes))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
-
 print("Bot iniciado")
 
 app.run_polling()
