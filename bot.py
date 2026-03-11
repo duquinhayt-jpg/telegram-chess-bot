@@ -87,6 +87,7 @@ mensagens_controladas = {}
 
 # utilizadores à espera do número da partida para resumo
 esperando_resumo = set()
+mensagem_historico = {}
 
 # =========================================================
 # STOCKFISH
@@ -701,7 +702,10 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        await enviar_mensagem_inicio_partida(context, chat_id, user_id)
+        await query.edit_message_text(
+            text=texto_inicio_partida(user_id),
+            parse_mode="Markdown"
+        )
 
         # se joga de pretas, o bot move a seguir e manda outra mensagem sem tabuleiro
         if cor == "black":
@@ -746,10 +750,19 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # HISTÓRICO
     if query.data == "historico":
         esperando_resumo.discard(user_id)
-
+    
         historico = get_history(user_id, 10)
+    
+        mensagem_historico[user_id] = query.message.message_id
+    
         await query.edit_message_text(
-            text=texto_historico(user_id),
+            text=(
+                "📜 *Histórico de partidas*\n\n"
+                "Para ver o resumo:\n"
+                "1️⃣ Clica em *Ver resumo*\n"
+                "2️⃣ Escreve o número da partida\n\n"
+                + texto_historico(user_id)
+            ),
             parse_mode="Markdown",
             reply_markup=menu_historico_com_resumo() if historico else menu_historico_sem_resumo()
         )
@@ -757,13 +770,12 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "ver_resumo":
         esperando_resumo.add(user_id)
-
-        prompt = await context.bot.send_message(
-            chat_id=chat_id,
-            text="📝 Escreve o número da partida que queres resumir.\n\nExemplo: `12`",
+    
+        await query.edit_message_text(
+            text=query.message.text + "\n\n✏️ *Escreve o número da partida.*",
             parse_mode="Markdown"
         )
-        registar_mensagem(user_id, prompt.message_id)
+    
         return
 
     # CONFIGURAÇÕES
@@ -880,36 +892,34 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # RESUMO DO HISTÓRICO
     if user_id in esperando_resumo:
-        if not texto.isdigit():
-            aviso = await context.bot.send_message(
-                chat_id=chat_id,
-                text="❌ Envia apenas o número da partida.\n\nExemplo: `12`",
-                parse_mode="Markdown"
-            )
-            registar_mensagem(user_id, aviso.message_id)
-            return
 
+        if not texto.isdigit():
+            return
+    
         game_id = int(texto)
         moves_str = get_game_moves(user_id, game_id)
-
+    
         if moves_str is None:
-            aviso = await context.bot.send_message(
-                chat_id=chat_id,
-                text="❌ Partida não encontrada no teu histórico.",
-                parse_mode="Markdown"
-            )
-            registar_mensagem(user_id, aviso.message_id)
             esperando_resumo.discard(user_id)
             return
-
+    
         resumo = resumo_jogadas_para_texto(moves_str)
-        msg = await context.bot.send_message(
-            chat_id=chat_id,
-            text=resumo,
-            parse_mode="Markdown"
-        )
-        registar_mensagem(user_id, msg.message_id)
+    
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=mensagem_historico[user_id],
+                text=resumo,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Voltar", callback_data="historico")]
+                ])
+            )
+        except:
+            pass
+    
         esperando_resumo.discard(user_id)
+    
         return
 
     if user_id not in jogos:
@@ -1062,4 +1072,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
