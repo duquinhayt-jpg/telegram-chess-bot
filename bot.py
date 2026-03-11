@@ -7,7 +7,7 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-stockfish = Stockfish()
+stockfish = Stockfish(path="/usr/games/stockfish")
 
 
 def menu_inicial():
@@ -167,3 +167,4 @@ print("Bot iniciado...")
 
 
 app.run_polling()
+
