@@ -78,15 +78,15 @@ db.commit()
 #     "board": chess.Board(),
 #     "color": "white" / "black",
 #     "difficulty": 1/2/3,
-#     "game_id": int,
-#     "show_board": bool,
-#     "panel_message_id": int | None
+#     "game_id": int
 # }
 jogos = {}
 
 # mensagens_controladas[user_id] = set(message_ids)
-# Guarda mensagens que o bot conhece para tentar limpar depois.
 mensagens_controladas = {}
+
+# utilizadores à espera do número da partida para resumo
+esperando_resumo = set()
 
 # =========================================================
 # STOCKFISH
@@ -137,7 +137,6 @@ def garantir_user(user_id: int, username: str | None, first_name: str | None):
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ))
 
-        # dificuldade pré-definida = difícil
         cursor.execute("""
             INSERT INTO settings (user_id, difficulty)
             VALUES (?, 3)
@@ -230,6 +229,16 @@ def get_history(user_id: int, limit: int = 10):
     """, (user_id, limit))
     return cursor.fetchall()
 
+
+def get_game_moves(user_id: int, game_id: int):
+    cursor.execute("""
+        SELECT moves
+        FROM games
+        WHERE user_id = ? AND game_id = ?
+    """, (user_id, game_id))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
 # =========================================================
 # TRACKING DE MENSAGENS
 # =========================================================
@@ -240,10 +249,6 @@ def registar_mensagem(user_id: int, message_id: int):
 
 
 async def limpar_mensagens_controladas(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
-    """
-    O Telegram não permite ao bot listar todo o histórico do chat.
-    Então aqui limpamos as mensagens que o bot foi acompanhando nesta execução.
-    """
     ids = list(mensagens_controladas.get(user_id, set()))
     ids.sort(reverse=True)
 
@@ -293,17 +298,22 @@ def menu_dificuldade():
     ])
 
 
-def menu_jogo(show_board: bool):
-    if show_board:
-        texto = "🙈 Esconder tabuleiro"
-        callback = "hide"
-    else:
-        texto = "👁 Mostrar tabuleiro"
-        callback = "show"
-
+def menu_historico_com_resumo():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(texto, callback_data=callback)],
-        [InlineKeyboardButton("🏳️ Desistir", callback_data="sair")]
+        [InlineKeyboardButton("🔎 Ver resumo", callback_data="ver_resumo")],
+        [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
+    ])
+
+
+def menu_historico_sem_resumo():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
+    ])
+
+
+def menu_mostrar_tabuleiro():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👁 Mostrar tabuleiro", callback_data="show_board")]
     ])
 
 # =========================================================
@@ -346,37 +356,18 @@ def estado_turno(board: chess.Board, color: str) -> str:
     return "Vez do bot"
 
 
-def texto_painel_jogo(user_id: int, incluir_tabuleiro: bool, ultima_jogada_bot: str | None = None) -> str:
-    jogo = jogos[user_id]
-    board = jogo["board"]
-    color = jogo["color"]
-    difficulty = jogo["difficulty"]
+def nome_dificuldade(nivel: int) -> str:
+    return {1: "Fácil", 2: "Médio", 3: "Difícil"}.get(nivel, str(nivel))
 
-    diff_nome = {1: "Fácil", 2: "Médio", 3: "Difícil"}[difficulty]
-    cor_nome = "Brancas" if color == "white" else "Pretas"
 
-    linhas = [
-        "♟️ *Bot de Xadrez*",
-        "",
-        f"🎨 Peças: *{cor_nome}*",
-        f"🤖 Dificuldade: *{diff_nome}*",
-        f"⏳ Estado: *{estado_turno(board, color)}*",
-    ]
-
-    if ultima_jogada_bot:
-        linhas.append(f"🤖 Bot jogou: *{ultima_jogada_bot}*")
-
-    linhas.append("")
-
-    if incluir_tabuleiro:
-        tab = board_to_unicode(board, color)
-        linhas.append(f"```text\n{tab}\n```")
-        linhas.append("Envia a tua jogada em formato `e2e4`.")
-    else:
-        linhas.append("_Tabuleiro escondido._")
-        linhas.append("Envia a tua jogada em formato `e2e4`.")
-
-    return "\n".join(linhas)
+def nome_resultado(result: str) -> str:
+    return {
+        "win": "Vitória",
+        "loss": "Derrota",
+        "draw": "Empate",
+        "resign": "Desistência",
+        "unfinished": "Inacabada",
+    }.get(result, result)
 
 # =========================================================
 # MOTOR
@@ -478,16 +469,10 @@ def texto_historico(user_id: int):
 
     for game_id, started_at, player_color, difficulty, result in historico:
         cor = "Brancas" if player_color == "white" else "Pretas"
-        dif = {1: "Fácil", 2: "Médio", 3: "Difícil"}.get(difficulty, str(difficulty))
-        res = {
-            "win": "Vitória",
-            "loss": "Derrota",
-            "draw": "Empate",
-            "resign": "Desistência",
-            "unfinished": "Inacabada",
-        }.get(result, result)
-
+        dif = nome_dificuldade(difficulty)
+        res = nome_resultado(result)
         data = started_at[:16] if started_at else "-"
+
         texto += (
             f"#{game_id} • {data}\n"
             f"Peças: {cor} | Dificuldade: {dif}\n"
@@ -499,11 +484,88 @@ def texto_historico(user_id: int):
 
 def texto_config(user_id: int):
     nivel = get_difficulty(user_id)
-    diff_nome = {1: "Fácil", 2: "Médio", 3: "Difícil"}[nivel]
+    diff_nome = nome_dificuldade(nivel)
     return (
         "⚙️ *Configurações*\n\n"
         f"🤖 Dificuldade atual do bot: *{diff_nome}*"
     )
+
+
+def texto_inicio_partida(user_id: int) -> str:
+    jogo = jogos[user_id]
+    board = jogo["board"]
+    color = jogo["color"]
+    difficulty = jogo["difficulty"]
+
+    cor_nome = "Brancas" if color == "white" else "Pretas"
+    diff_nome = nome_dificuldade(difficulty)
+    tab = board_to_unicode(board, color)
+
+    return (
+        "♟️ *Partida iniciada*\n\n"
+        f"🤖 Dificuldade: *{diff_nome}*\n"
+        f"🎨 Tu jogas com: *{cor_nome}*\n"
+        f"⏳ Quem joga: *{estado_turno(board, color)}*\n\n"
+        f"```text\n{tab}\n```"
+    )
+
+
+def texto_jogada_bot(user_id: int, bot_move: str, incluir_tabuleiro: bool) -> str:
+    jogo = jogos[user_id]
+    board = jogo["board"]
+    color = jogo["color"]
+
+    linhas = [
+        f"🤖 *Bot jogou:* *{bot_move}*",
+        f"⏳ Quem joga: *{estado_turno(board, color)}*",
+        "",
+    ]
+
+    if incluir_tabuleiro:
+        linhas.append(f"```text\n{board_to_unicode(board, color)}\n```")
+    else:
+        linhas.append("_Tabuleiro escondido._")
+
+    return "\n".join(linhas)
+
+
+def resumo_jogadas_para_texto(moves_str: str, limite_chars: int = 3500) -> str:
+    if not moves_str.strip():
+        return "Esta partida não tem jogadas guardadas."
+
+    board = chess.Board()
+    moves = moves_str.split()
+    linhas = []
+    par_atual = []
+    numero = 1
+
+    for uci in moves:
+        try:
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                san = uci
+            else:
+                san = board.san(move)
+                board.push(move)
+        except Exception:
+            san = uci
+
+        par_atual.append(san)
+
+        if len(par_atual) == 2:
+            linhas.append(f"{numero}. {par_atual[0]} {par_atual[1]}")
+            numero += 1
+            par_atual = []
+
+    if par_atual:
+        linhas.append(f"{numero}. {par_atual[0]}")
+
+    texto = "📝 *Resumo das jogadas*\n\n" + "\n".join(linhas)
+
+    if len(texto) > limite_chars:
+        texto = texto[:limite_chars - 20] + "\n\n_(resumo cortado)_"
+
+    return texto
 
 # =========================================================
 # ENVIO DE MENSAGENS
@@ -518,33 +580,32 @@ async def enviar_menu_principal(context: ContextTypes.DEFAULT_TYPE, chat_id: int
     registar_mensagem(user_id, msg.message_id)
 
 
-async def enviar_painel_jogo(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, ultima_jogada_bot: str | None = None):
-    jogo = jogos[user_id]
+async def enviar_mensagem_inicio_partida(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
     msg = await context.bot.send_message(
         chat_id=chat_id,
-        text=texto_painel_jogo(
-            user_id=user_id,
-            incluir_tabuleiro=jogo["show_board"],
-            ultima_jogada_bot=ultima_jogada_bot
-        ),
-        parse_mode="Markdown",
-        reply_markup=menu_jogo(jogo["show_board"])
+        text=texto_inicio_partida(user_id),
+        parse_mode="Markdown"
     )
-    jogo["panel_message_id"] = msg.message_id
     registar_mensagem(user_id, msg.message_id)
 
 
-async def editar_painel_jogo(query, user_id: int):
-    jogo = jogos[user_id]
-    await query.edit_message_text(
-        text=texto_painel_jogo(
-            user_id=user_id,
-            incluir_tabuleiro=jogo["show_board"],
-            ultima_jogada_bot=None
-        ),
+async def enviar_mensagem_jogada_bot(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    bot_move: str,
+    mostrar_tabuleiro: bool = False
+):
+    reply_markup = None if mostrar_tabuleiro else menu_mostrar_tabuleiro()
+
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=texto_jogada_bot(user_id, bot_move, mostrar_tabuleiro),
         parse_mode="Markdown",
-        reply_markup=menu_jogo(jogo["show_board"])
+        reply_markup=reply_markup
     )
+    registar_mensagem(user_id, msg.message_id)
+    return msg
 
 # =========================================================
 # COMANDO /start
@@ -556,18 +617,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     garantir_user(user_id, user.username, user.first_name)
 
-    # Regista a mensagem /start para tentar apagá-la também
     if update.message:
         registar_mensagem(user_id, update.message.message_id)
 
-    # Fecha jogo ativo em memória
+    # se houver jogo ativo, encerra como desistência ao reiniciar
     if user_id in jogos:
+        jogo = jogos[user_id]
+        moves = " ".join([m.uci() for m in jogo["board"].move_stack])
+        finish_game(jogo["game_id"], "resign", moves)
+        add_result(user_id, "loss")
         del jogos[user_id]
 
-    # Limpa mensagens acompanhadas pelo bot
-    await limpar_mensagens_controladas(context, chat_id, user_id)
+    esperando_resumo.discard(user_id)
 
-    # Envia menu inicial
+    await limpar_mensagens_controladas(context, chat_id, user_id)
     await enviar_menu_principal(context, chat_id, user_id, user.first_name)
 
 # =========================================================
@@ -586,6 +649,8 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # MENU PRINCIPAL
     if query.data == "menu":
+        esperando_resumo.discard(user_id)
+
         await query.edit_message_text(
             text=texto_menu_inicial(user.first_name),
             parse_mode="Markdown",
@@ -595,11 +660,15 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # NOVO JOGO
     if query.data == "novo":
+        esperando_resumo.discard(user_id)
+
         if user_id in jogos:
             await query.edit_message_text(
-                text="⚠️ *Já tens um jogo em curso.*\n\nDesiste da partida atual antes de começar outra.",
+                text="⚠️ *Já tens um jogo em curso.*\n\nTermina essa partida primeiro ou usa /start para recomeçar.",
                 parse_mode="Markdown",
-                reply_markup=menu_jogo(jogos[user_id]["show_board"])
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
+                ])
             )
             return
 
@@ -612,6 +681,8 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ESCOLHER PEÇAS
     if query.data.startswith("cor_"):
+        esperando_resumo.discard(user_id)
+
         cor = query.data.split("_")[1]
         difficulty = get_difficulty(user_id)
         board = chess.Board()
@@ -622,38 +693,46 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "color": cor,
             "difficulty": difficulty,
             "game_id": game_id,
-            "show_board": True,
-            "panel_message_id": None
         }
 
-        # O menu de escolha de peças deixa de ser necessário
         try:
             await query.message.delete()
         except Exception:
             pass
 
-        # Se escolher pretas, o bot joga primeiro
+        await enviar_mensagem_inicio_partida(context, chat_id, user_id)
+
+        # se joga de pretas, o bot move a seguir e manda outra mensagem sem tabuleiro
         if cor == "black":
             try:
                 bot_move = stockfish_move(board, difficulty)
                 board.push(bot_move)
-                await enviar_painel_jogo(context, chat_id, user_id, ultima_jogada_bot=bot_move.uci())
+                await enviar_mensagem_jogada_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    bot_move=bot_move.uci(),
+                    mostrar_tabuleiro=False
+                )
             except Exception:
-                if user_id in jogos:
-                    del jogos[user_id]
-                await context.bot.send_message(
+                moves = " ".join([m.uci() for m in board.move_stack])
+                finish_game(game_id, "unfinished", moves)
+                del jogos[user_id]
+
+                erro = await context.bot.send_message(
                     chat_id=chat_id,
                     text="❌ *Erro ao comunicar com o Stockfish.*",
                     parse_mode="Markdown",
                     reply_markup=menu_principal()
                 )
-            return
+                registar_mensagem(user_id, erro.message_id)
 
-        await enviar_painel_jogo(context, chat_id, user_id)
         return
 
     # ESTATÍSTICAS
     if query.data == "stats":
+        esperando_resumo.discard(user_id)
+
         await query.edit_message_text(
             text=texto_stats(user_id),
             parse_mode="Markdown",
@@ -665,17 +744,31 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # HISTÓRICO
     if query.data == "historico":
+        esperando_resumo.discard(user_id)
+
+        historico = get_history(user_id, 10)
         await query.edit_message_text(
             text=texto_historico(user_id),
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
-            ])
+            reply_markup=menu_historico_com_resumo() if historico else menu_historico_sem_resumo()
         )
+        return
+
+    if query.data == "ver_resumo":
+        esperando_resumo.add(user_id)
+
+        prompt = await context.bot.send_message(
+            chat_id=chat_id,
+            text="📝 Escreve o número da partida que queres resumir.\n\nExemplo: `12`",
+            parse_mode="Markdown"
+        )
+        registar_mensagem(user_id, prompt.message_id)
         return
 
     # CONFIGURAÇÕES
     if query.data == "config":
+        esperando_resumo.discard(user_id)
+
         await query.edit_message_text(
             text=texto_config(user_id),
             parse_mode="Markdown",
@@ -684,8 +777,10 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "config_dif":
+        esperando_resumo.discard(user_id)
+
         nivel = get_difficulty(user_id)
-        diff_nome = {1: "Fácil", 2: "Médio", 3: "Difícil"}[nivel]
+        diff_nome = nome_dificuldade(nivel)
 
         await query.edit_message_text(
             text=(
@@ -699,19 +794,22 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data.startswith("cfg_"):
+        esperando_resumo.discard(user_id)
+
         nivel = int(query.data.split("_")[1])
         set_difficulty(user_id, nivel)
-    
-        diff_nome = {1: "Fácil", 2: "Médio", 3: "Difícil"}[nivel]
-    
+
+        diff_nome = nome_dificuldade(nivel)
+
         await query.edit_message_text(
             text=f"✅ *Dificuldade atualizada para:* *{diff_nome}*",
             parse_mode="Markdown",
             reply_markup=menu_config()
         )
+        return
 
-    # BOTÕES DURANTE O JOGO
-    if query.data == "hide":
+    # MOSTRAR TABULEIRO NO PAINEL DA JOGADA DO BOT
+    if query.data == "show_board":
         if user_id not in jogos:
             await query.edit_message_text(
                 text="❗ *Não existe jogo ativo.*",
@@ -720,35 +818,17 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        jogos[user_id]["show_board"] = False
-        await editar_painel_jogo(query, user_id)
-        return
+        board = jogos[user_id]["board"]
+        color = jogos[user_id]["color"]
 
-    if query.data == "show":
-        if user_id not in jogos:
-            await query.edit_message_text(
-                text="❗ *Não existe jogo ativo.*",
-                parse_mode="Markdown",
-                reply_markup=menu_principal()
-            )
-            return
-
-        jogos[user_id]["show_board"] = True
-        await editar_painel_jogo(query, user_id)
-        return
-
-    if query.data == "sair":
-        if user_id in jogos:
-            jogo = jogos[user_id]
-            board = jogo["board"]
-            moves = " ".join([m.uci() for m in board.move_stack])
-
-            finish_game(jogo["game_id"], "resign", moves)
-            add_result(user_id, "loss")
-            del jogos[user_id]
-
-        await limpar_mensagens_controladas(context, chat_id, user_id)
-        await enviar_menu_principal(context, chat_id, user_id, user.first_name)
+        await query.edit_message_text(
+            text=(
+                "👁 *Tabuleiro atual*\n\n"
+                f"⏳ Quem joga: *{estado_turno(board, color)}*\n\n"
+                f"```text\n{board_to_unicode(board, color)}\n```"
+            ),
+            parse_mode="Markdown"
+        )
         return
 
 # =========================================================
@@ -764,9 +844,41 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip().lower()
 
     garantir_user(user_id, user.username, user.first_name)
-
-    # Guardamos a mensagem do utilizador para tentar apagar no /start ou no fim.
     registar_mensagem(user_id, update.message.message_id)
+
+    # RESUMO DO HISTÓRICO
+    if user_id in esperando_resumo:
+        if not texto.isdigit():
+            aviso = await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Envia apenas o número da partida.\n\nExemplo: `12`",
+                parse_mode="Markdown"
+            )
+            registar_mensagem(user_id, aviso.message_id)
+            return
+
+        game_id = int(texto)
+        moves_str = get_game_moves(user_id, game_id)
+
+        if moves_str is None:
+            aviso = await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Partida não encontrada no teu histórico.",
+                parse_mode="Markdown"
+            )
+            registar_mensagem(user_id, aviso.message_id)
+            esperando_resumo.discard(user_id)
+            return
+
+        resumo = resumo_jogadas_para_texto(moves_str)
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=resumo,
+            parse_mode="Markdown"
+        )
+        registar_mensagem(user_id, msg.message_id)
+        esperando_resumo.discard(user_id)
+        return
 
     if user_id not in jogos:
         return
@@ -776,7 +888,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
     color = jogo["color"]
     difficulty = jogo["difficulty"]
 
-    # Só permite jogar na vez do utilizador
+    # só permite jogar na vez do utilizador
     if (color == "white" and board.turn != chess.WHITE) or (color == "black" and board.turn != chess.BLACK):
         aviso = await context.bot.send_message(
             chat_id=chat_id,
@@ -786,7 +898,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, aviso.message_id)
         return
 
-    # Validar formato
+    # validar formato
     try:
         move = chess.Move.from_uci(texto)
     except Exception:
@@ -798,7 +910,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, aviso.message_id)
         return
 
-    # Validar legalidade
+    # validar legalidade
     if move not in board.legal_moves:
         aviso = await context.bot.send_message(
             chat_id=chat_id,
@@ -808,10 +920,10 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, aviso.message_id)
         return
 
-    # Jogada do utilizador
+    # jogada do utilizador
     board.push(move)
 
-    # Fim do jogo após jogada do utilizador
+    # fim do jogo após jogada do utilizador
     if board.is_game_over():
         resultado = get_game_result_for_user(board, color)
         moves = " ".join([m.uci() for m in board.move_stack])
@@ -837,7 +949,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, fim.message_id)
         return
 
-    # Jogada do bot
+    # jogada do bot
     try:
         bot_move = stockfish_move(board, difficulty)
         board.push(bot_move)
@@ -857,7 +969,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, erro.message_id)
         return
 
-    # Fim do jogo após jogada do bot
+    # fim do jogo após jogada do bot
     if board.is_game_over():
         resultado = get_game_result_for_user(board, color)
         moves = " ".join([m.uci() for m in board.move_stack])
@@ -883,14 +995,17 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, fim.message_id)
         return
 
-    # O jogo continua:
+    # jogo continua:
     # a mensagem do utilizador fica;
-    # o bot envia nova mensagem com a jogada dele e botões.
-    await enviar_painel_jogo(
+    # o bot envia nova mensagem com a jogada dele;
+    # tabuleiro escondido por defeito;
+    # só existe botão Mostrar tabuleiro.
+    await enviar_mensagem_jogada_bot(
         context=context,
         chat_id=chat_id,
         user_id=user_id,
-        ultima_jogada_bot=bot_move.uci()
+        bot_move=bot_move.uci(),
+        mostrar_tabuleiro=False
     )
 
 # =========================================================
