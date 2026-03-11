@@ -7,7 +7,7 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-# procurar stockfish no sistema
+# tentar iniciar stockfish
 stockfish = None
 
 try:
@@ -18,12 +18,12 @@ try:
     if path:
         stockfish = Stockfish(path)
         stockfish.set_skill_level(10)
-        print("Stockfish encontrado:", path)
+        print("Stockfish encontrado em:", path)
     else:
-        print("Stockfish não encontrado")
+        print("Stockfish não encontrado no sistema")
 
 except Exception as e:
-    print("Erro Stockfish:", e)
+    print("Erro ao iniciar Stockfish:", e)
 
 
 def menu_inicial():
@@ -43,7 +43,7 @@ def menu_jogo():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "♟️ Bot de Xadrez\n\nClique para começar.",
+        "♟️ Bot de Xadrez\n\nClica para começar.",
         reply_markup=menu_inicial()
     )
 
@@ -109,6 +109,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         board.push(move)
 
         if stockfish:
+
             stockfish.set_fen_position(board.fen())
             bot_move = stockfish.get_best_move()
 
@@ -120,7 +121,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Jogada registada.")
 
     except:
-        await update.message.reply_text("Formato inválido. Use e2e4")
+        await update.message.reply_text("Formato inválido. Usa e2e4")
 
 
 app = ApplicationBuilder().token(TOKEN).build()
