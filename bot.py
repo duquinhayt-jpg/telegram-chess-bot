@@ -1,29 +1,11 @@
 import chess
-import shutil
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
-
-# tentar iniciar stockfish
-stockfish = None
-
-try:
-    from stockfish import Stockfish
-
-    path = shutil.which("stockfish")
-
-    if path:
-        stockfish = Stockfish(path)
-        stockfish.set_skill_level(10)
-        print("Stockfish encontrado em:", path)
-    else:
-        print("Stockfish não encontrado no sistema")
-
-except Exception as e:
-    print("Erro ao iniciar Stockfish:", e)
 
 
 def menu_inicial():
@@ -108,17 +90,15 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         board.push(move)
 
-        if stockfish:
+        # IA simples: escolhe uma jogada aleatória
+        if not board.is_game_over():
 
-            stockfish.set_fen_position(board.fen())
-            bot_move = stockfish.get_best_move()
+            moves = list(board.legal_moves)
+            bot_move = random.choice(moves)
 
-            if bot_move:
-                board.push(chess.Move.from_uci(bot_move))
-                await update.message.reply_text(f"🤖 Bot jogou: {bot_move}")
+            board.push(bot_move)
 
-        else:
-            await update.message.reply_text("Jogada registada.")
+            await update.message.reply_text(f"🤖 Bot jogou: {bot_move}")
 
     except:
         await update.message.reply_text("Formato inválido. Usa e2e4")
