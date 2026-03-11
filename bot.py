@@ -53,35 +53,28 @@ def stockfish_move(board: chess.Board, depth: int):
 
     try:
 
-        url = "https://stockfish.online/api/s/v2.php"
+        url = "https://chessdb.cn/cdb.php"
 
         params = {
-            "fen": board.fen(),
-            "depth": depth
+            "action": "querybest",
+            "board": board.fen()
         }
 
         r = requests.get(url, params=params, timeout=10)
 
-        if r.status_code != 200:
-            print("Erro HTTP:", r.status_code)
+        text = r.text.strip()
+
+        print("Resposta chessdb:", text)
+
+        if "move:" not in text:
             return None
 
-        data = r.json()
+        move = text.split("move:")[1].split()[0]
 
-        print("Resposta API:", data)
-
-        if "bestmove" not in data:
-            return None
-
-        bestmove = data["bestmove"]
-
-        if " " in bestmove:
-            bestmove = bestmove.split(" ")[1]
-
-        return chess.Move.from_uci(bestmove)
+        return chess.Move.from_uci(move)
 
     except Exception as e:
-        print("Erro Stockfish:", e)
+        print("Erro IA:", e)
         return None
 
 
@@ -326,4 +319,5 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado")
 
 app.run_polling()
+
 
