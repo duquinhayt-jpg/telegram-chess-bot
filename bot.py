@@ -322,14 +322,40 @@ def menu_jogo():
 def stockfish_move(board: chess.Board, difficulty: int):
     if difficulty == 1:
         engine.configure({"Skill Level": 3})
-        result = engine.play(board, chess.engine.Limit(time=0.08))
+        limit = chess.engine.Limit(time=0.08)
+        multipv = 4
+
     elif difficulty == 2:
         engine.configure({"Skill Level": 10})
-        result = engine.play(board, chess.engine.Limit(time=0.25))
+        limit = chess.engine.Limit(time=0.25)
+        multipv = 3
+
     else:
         engine.configure({"Skill Level": 18})
-        result = engine.play(board, chess.engine.Limit(time=0.8))
-    return result.move
+        limit = chess.engine.Limit(time=0.8)
+        multipv = 2
+
+    info = engine.analyse(board, limit, multipv=multipv)
+
+    if not isinstance(info, list):
+        return engine.play(board, limit).move
+
+    jogadas = []
+    for item in info:
+        pv = item.get("pv")
+        if pv and len(pv) > 0:
+            jogadas.append(pv[0])
+
+    if not jogadas:
+        return engine.play(board, limit).move
+
+    # remove repetidas
+    jogadas_unicas = []
+    for move in jogadas:
+        if move not in jogadas_unicas:
+            jogadas_unicas.append(move)
+
+    return random.choice(jogadas_unicas)
 
 
 def get_game_result_for_user(board: chess.Board, user_color: str) -> str:
@@ -804,3 +830,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
