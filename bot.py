@@ -520,13 +520,10 @@ def texto_jogada_bot(user_id: int, bot_move: str, incluir_tabuleiro: bool) -> st
     linhas = [
         f"🤖 *Bot jogou:* *{bot_move}*",
         f"⏳ Quem joga: *{estado_turno(board, color)}*",
-        "",
     ]
 
     if incluir_tabuleiro:
         linhas.append(f"```text\n{board_to_unicode(board, color)}\n```")
-    else:
-        linhas.append("_Tabuleiro escondido._")
 
     return "\n".join(linhas)
 
@@ -1091,5 +1088,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
