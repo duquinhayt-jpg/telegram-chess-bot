@@ -1,4 +1,5 @@
 import chess
+import shutil
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -6,15 +7,23 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-# tentativa de iniciar stockfish
+# procurar stockfish no sistema
+stockfish = None
+
 try:
     from stockfish import Stockfish
-    stockfish = Stockfish("/usr/games/stockfish")
-    stockfish.set_skill_level(10)
-    print("Stockfish ativo")
-except:
-    stockfish = None
-    print("Stockfish não encontrado")
+
+    path = shutil.which("stockfish")
+
+    if path:
+        stockfish = Stockfish(path)
+        stockfish.set_skill_level(10)
+        print("Stockfish encontrado:", path)
+    else:
+        print("Stockfish não encontrado")
+
+except Exception as e:
+    print("Erro Stockfish:", e)
 
 
 def menu_inicial():
@@ -106,6 +115,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if bot_move:
                 board.push(chess.Move.from_uci(bot_move))
                 await update.message.reply_text(f"🤖 Bot jogou: {bot_move}")
+
         else:
             await update.message.reply_text("Jogada registada.")
 
@@ -122,4 +132,3 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado...")
 
 app.run_polling()
-
