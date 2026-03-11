@@ -13,7 +13,7 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = "SEU_TOKEN"
+TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 ENGINE_PATH = "./stockfish"
 
@@ -203,4 +203,5 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado")
 
 app.run_polling()
+
 
