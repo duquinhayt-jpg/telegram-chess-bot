@@ -7,7 +7,7 @@ TOKEN = "8625933223:AAH4SppnDG5LqIfn-k3bN35KOOB_JoKRWGc"
 
 jogos = {}
 
-stockfish = Stockfish(path="stockfish.exe")
+stockfish = Stockfish()
 
 
 def menu_inicial():
@@ -164,5 +164,6 @@ app.add_handler(CallbackQueryHandler(botoes))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 
 print("Bot iniciado...")
+
 
 app.run_polling()
