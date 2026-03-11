@@ -9,12 +9,12 @@ jogos = {}
 # tentativa de iniciar stockfish
 try:
     from stockfish import Stockfish
-    stockfish = Stockfish(path="/usr/games/stockfish")
+    stockfish = Stockfish("/usr/games/stockfish")
     stockfish.set_skill_level(10)
-    print("Stockfish iniciado")
+    print("Stockfish ativo")
 except:
     stockfish = None
-    print("Stockfish não encontrado - bot continua sem IA")
+    print("Stockfish não encontrado")
 
 
 def menu_inicial():
@@ -122,3 +122,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, jogada))
 print("Bot iniciado...")
 
 app.run_polling()
+
