@@ -240,6 +240,27 @@ def get_game_moves(user_id: int, game_id: int):
     row = cursor.fetchone()
     return row[0] if row else None
 
+def reset_stats(user_id: int):
+    cursor.execute("""
+        INSERT INTO stats (user_id, wins, losses, draws)
+        VALUES (?, 0, 0, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+            wins = 0,
+            losses = 0,
+            draws = 0
+    """, (user_id,))
+    db.commit()
+
+
+def reset_history(user_id: int):
+    cursor.execute("DELETE FROM games WHERE user_id = ?", (user_id,))
+    db.commit()
+
+
+def reset_history_and_stats(user_id: int):
+    reset_history(user_id)
+    reset_stats(user_id)
+
 # =========================================================
 # TRACKING DE MENSAGENS
 # =========================================================
@@ -286,6 +307,7 @@ def menu_escolher_pecas():
 def menu_config():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🤖 Dificuldade do bot", callback_data="config_dif")],
+        [InlineKeyboardButton("🗑 Reset histórico", callback_data="reset_dados")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
     ])
 
@@ -296,6 +318,13 @@ def menu_dificuldade():
         [InlineKeyboardButton("🟡 Médio", callback_data="cfg_2")],
         [InlineKeyboardButton("🔴 Difícil", callback_data="cfg_3")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="config")]
+    ])
+    
+
+def menu_confirmar_reset():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Confirmar reset", callback_data="confirmar_reset")],
+        [InlineKeyboardButton("⬅️ Cancelar", callback_data="config")]
     ])
 
 
@@ -370,6 +399,37 @@ def nome_resultado(result: str) -> str:
         "resign": "Desistência",
         "unfinished": "Inacabada",
     }.get(result, result)
+
+# =========================================================
+# NORMALIZAÇÃO SAN
+# =========================================================
+def normalizar_san(texto: str) -> str:
+    texto = texto.strip()
+
+    if not texto:
+        return texto
+
+    # remover espaços internos tipo "N f3"
+    texto = texto.replace(" ", "")
+
+    # roques com letra O ou zero
+    t = texto.lower()
+    if t in ("o-o", "0-0"):
+        return "O-O"
+    if t in ("o-o-o", "0-0-0"):
+        return "O-O-O"
+
+    # promoção: e8=q -> e8=Q
+    if "=" in texto:
+        partes = texto.split("=")
+        if len(partes) == 2 and partes[1]:
+            texto = partes[0] + "=" + partes[1].upper()
+
+    # primeira letra da peça em maiúscula, se existir
+    if texto and texto[0].lower() in {"k", "q", "r", "b", "n"}:
+        texto = texto[0].upper() + texto[1:]
+
+    return texto
 
 # =========================================================
 # MOTOR
@@ -508,6 +568,8 @@ def texto_inicio_partida(user_id: int) -> str:
         f"🤖 Dificuldade: *{diff_nome}*\n"
         f"🎨 Tu jogas com: *{cor_nome}*\n"
         f"⏳ Quem joga: *{estado_turno(board, color)}*\n\n"
+        "Escreve a tua jogada em notação normal, por exemplo:\n"
+        "`e4`, `Nf3`, `Bxc6`, `O-O`\n\n"
         f"```text\n{tab}\n```"
     )
 
@@ -681,55 +743,55 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ESCOLHER PEÇAS
     if query.data.startswith("cor_"):
         esperando_resumo.discard(user_id)
-    
+
         cor = query.data.split("_")[1]
         difficulty = get_difficulty(user_id)
         board = chess.Board()
         game_id = create_game(user_id, cor, difficulty)
-    
+
         jogos[user_id] = {
             "board": board,
             "color": cor,
             "difficulty": difficulty,
             "game_id": game_id,
         }
-    
+
         await query.edit_message_text(
             text=texto_inicio_partida(user_id),
             parse_mode="Markdown"
         )
-    
+
         # se joga de pretas, o bot joga primeiro
         if cor == "black":
             try:
                 bot_move = stockfish_move(board, difficulty)
+                bot_move_san = board.san(bot_move)
                 board.push(bot_move)
-    
+
                 await enviar_mensagem_jogada_bot(
                     context=context,
                     chat_id=chat_id,
                     user_id=user_id,
-                    bot_move=bot_move.uci(),
+                    bot_move=bot_move_san,
                     mostrar_tabuleiro=False
                 )
-    
+
             except Exception:
-    
                 moves = " ".join([m.uci() for m in board.move_stack])
-    
+
                 finish_game(game_id, "unfinished", moves)
-    
+
                 del jogos[user_id]
-    
+
                 erro = await context.bot.send_message(
                     chat_id=chat_id,
                     text="❌ *Erro ao comunicar com o Stockfish.*",
                     parse_mode="Markdown",
                     reply_markup=menu_principal()
                 )
-    
+
                 registar_mensagem(user_id, erro.message_id)
-    
+
         return
 
     # ESTATÍSTICAS
@@ -748,11 +810,11 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # HISTÓRICO
     if query.data == "historico":
         esperando_resumo.discard(user_id)
-    
+
         historico = get_history(user_id, 10)
-    
+
         mensagem_historico[user_id] = query.message.message_id
-    
+
         await query.edit_message_text(
             text=(
                 "📜 *Histórico de partidas*\n\n"
@@ -768,12 +830,12 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "ver_resumo":
         esperando_resumo.add(user_id)
-    
+
         await query.edit_message_text(
             text=query.message.text + "\n\n✏️ *Escreve o número da partida.*",
             parse_mode="Markdown"
         )
-    
+
         return
 
     # CONFIGURAÇÕES
@@ -819,6 +881,37 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+        if query.data == "reset_dados":
+        esperando_resumo.discard(user_id)
+
+        await query.edit_message_text(
+            text=(
+                "⚠️ *Reset de dados*\n\n"
+                "Isto vai apagar:\n"
+                "• todo o histórico de partidas\n"
+                "• todas as estatísticas\n\n"
+                "Esta ação não pode ser desfeita."
+            ),
+            parse_mode="Markdown",
+            reply_markup=menu_confirmar_reset()
+        )
+        return
+
+    if query.data == "confirmar_reset":
+        esperando_resumo.discard(user_id)
+
+        reset_history_and_stats(user_id)
+
+        if user_id in mensagem_historico:
+            del mensagem_historico[user_id]
+
+        await query.edit_message_text(
+            text="✅ *Histórico e estatísticas apagados com sucesso.*",
+            parse_mode="Markdown",
+            reply_markup=menu_config()
+        )
+        return
+
     # MOSTRAR TABULEIRO NO PAINEL DA JOGADA DO BOT
     if query.data == "show_board":
         if user_id not in jogos:
@@ -828,30 +921,29 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=menu_principal()
             )
             return
-    
+
         jogo = jogos[user_id]
         board = jogo["board"]
         color = jogo["color"]
-    
+
         texto_antigo = query.message.text
-    
+
         novo_texto = (
             texto_antigo +
             "\n\n👁 *Tabuleiro atual*\n\n"
             f"```text\n{board_to_unicode(board, color)}\n```"
         )
-    
-        # botão apenas desistir
+
         teclado = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏳️ Desistir", callback_data="resign")]
         ])
-    
+
         await query.edit_message_text(
             text=novo_texto,
             parse_mode="Markdown",
             reply_markup=teclado
         )
-    
+
         return
 
     if query.data == "resign":
@@ -864,14 +956,14 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         jogo = jogos[user_id]
         board = jogo["board"]
-    
+
         moves = " ".join([m.uci() for m in board.move_stack])
-    
+
         finish_game(jogo["game_id"], "resign", moves)
         add_result(user_id, "loss")
-    
+
         del jogos[user_id]
-    
+
         await limpar_mensagens_controladas(context, chat_id, user_id)
 
         msg = await context.bot.send_message(
@@ -880,9 +972,9 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=menu_principal()
         )
-    
+
         registar_mensagem(user_id, msg.message_id)
-    
+
         return
 
 # =========================================================
@@ -895,32 +987,30 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     chat_id = update.effective_chat.id
-    texto = update.message.text.strip().lower()
+    texto = update.message.text.strip()
 
     garantir_user(user_id, user.username, user.first_name)
     registar_mensagem(user_id, update.message.message_id)
 
     # RESUMO DO HISTÓRICO
     if user_id in esperando_resumo:
-
-        # apagar a mensagem do utilizador (o número da partida)
         try:
             await update.message.delete()
-        except:
+        except Exception:
             pass
-    
+
         if not texto.isdigit():
             return
-    
+
         game_id = int(texto)
         moves_str = get_game_moves(user_id, game_id)
-    
+
         if moves_str is None:
             esperando_resumo.discard(user_id)
             return
-    
+
         resumo = resumo_jogadas_para_texto(moves_str)
-    
+
         try:
             await context.bot.edit_message_text(
                 chat_id=chat_id,
@@ -931,11 +1021,10 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton("⬅️ Voltar", callback_data="historico")]
                 ])
             )
-        except:
+        except Exception:
             pass
-    
+
         esperando_resumo.discard(user_id)
-    
         return
 
     if user_id not in jogos:
@@ -956,13 +1045,15 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, aviso.message_id)
         return
 
-    # validar formato
+    # validar formato em notação normal do xadrez (SAN)
+    texto_normalizado = normalizar_san(texto)
+
     try:
-        move = chess.Move.from_uci(texto)
+        move = board.parse_san(texto_normalizado)
     except Exception:
         aviso = await context.bot.send_message(
             chat_id=chat_id,
-            text="❌ *Formato inválido.*\n\nUsa `e2e4`.",
+            text="❌ *Formato inválido.*\n\nUsa jogadas como `e4`, `Nf3`, `Bxc6`, `O-O`.",
             parse_mode="Markdown"
         )
         registar_mensagem(user_id, aviso.message_id)
@@ -1010,6 +1101,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # jogada do bot
     try:
         bot_move = stockfish_move(board, difficulty)
+        bot_move_san = board.san(bot_move)
         board.push(bot_move)
     except Exception:
         moves = " ".join([m.uci() for m in board.move_stack])
@@ -1039,9 +1131,9 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await limpar_mensagens_controladas(context, chat_id, user_id)
 
         texto_final = {
-            "win": f"🏆 *Tu ganhaste!*\n\n🤖 Última jogada do bot: *{bot_move.uci()}*",
-            "loss": f"🤖 *O bot ganhou.*\n\n🤖 Última jogada do bot: *{bot_move.uci()}*",
-            "draw": f"🤝 *Empate.*\n\n🤖 Última jogada do bot: *{bot_move.uci()}*",
+            "win": f"🏆 *Tu ganhaste!*\n\n🤖 Última jogada do bot: *{bot_move_san}*",
+            "loss": f"🤖 *O bot ganhou.*\n\n🤖 Última jogada do bot: *{bot_move_san}*",
+            "draw": f"🤝 *Empate.*\n\n🤖 Última jogada do bot: *{bot_move_san}*",
         }[resultado]
 
         fim = await context.bot.send_message(
@@ -1053,16 +1145,11 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         registar_mensagem(user_id, fim.message_id)
         return
 
-    # jogo continua:
-    # a mensagem do utilizador fica;
-    # o bot envia nova mensagem com a jogada dele;
-    # tabuleiro escondido por defeito;
-    # só existe botão Mostrar tabuleiro.
     await enviar_mensagem_jogada_bot(
         context=context,
         chat_id=chat_id,
         user_id=user_id,
-        bot_move=bot_move.uci(),
+        bot_move=bot_move_san,
         mostrar_tabuleiro=False
     )
 
@@ -1088,6 +1175,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
