@@ -298,8 +298,8 @@ def menu_principal():
 
 def menu_escolher_pecas():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("♔ Jogar com Brancas", callback_data="cor_white")],
-        [InlineKeyboardButton("♚ Jogar com Pretas", callback_data="cor_black")],
+        [InlineKeyboardButton("♚ Jogar com Brancas", callback_data="cor_white")],
+        [InlineKeyboardButton("♔ Jogar com Pretas", callback_data="cor_black")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
     ])
 
@@ -1175,5 +1175,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
