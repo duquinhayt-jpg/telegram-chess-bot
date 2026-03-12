@@ -881,7 +881,7 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-        if query.data == "reset_dados":
+    if query.data == "reset_dados":
         esperando_resumo.discard(user_id)
 
         await query.edit_message_text(
@@ -1175,4 +1175,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
