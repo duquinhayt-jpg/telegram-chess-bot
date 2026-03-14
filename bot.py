@@ -300,6 +300,7 @@ def menu_escolher_pecas():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("♚ Jogar com Brancas", callback_data="cor_white")],
         [InlineKeyboardButton("♔ Jogar com Pretas", callback_data="cor_black")],
+        [InlineKeyboardButton("🎲 Aleatório", callback_data="cor_random")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="menu")]
     ])
 
@@ -399,39 +400,6 @@ def nome_resultado(result: str) -> str:
         "resign": "Desistência",
         "unfinished": "Inacabada",
     }.get(result, result)
-
-# =========================================================
-# NORMALIZAÇÃO SAN
-# =========================================================
-def normalizar_san(texto: str) -> str:
-    texto = texto.strip()
-
-    if not texto:
-        return texto
-
-    texto = texto.replace(" ", "")
-
-    # roque
-    t = texto.lower()
-    if t in ("o-o", "0-0"):
-        return "O-O"
-    if t in ("o-o-o", "0-0-0"):
-        return "O-O-O"
-
-    # promoção
-    if "=" in texto:
-        partes = texto.split("=")
-        if len(partes) == 2 and partes[1]:
-            texto = partes[0] + "=" + partes[1].upper()
-
-    # converter tudo para minúsculas primeiro
-    texto = texto.lower()
-
-    # se começar por peça verdadeira
-    if texto[0] in {"k", "q", "r", "b", "n"}:
-        texto = texto[0].upper() + texto[1:]
-
-    return texto
 
 # =========================================================
 # MOTOR
@@ -744,57 +712,62 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ESCOLHER PEÇAS
     if query.data.startswith("cor_"):
-        esperando_resumo.discard(user_id)
+    esperando_resumo.discard(user_id)
 
-        cor = query.data.split("_")[1]
-        difficulty = get_difficulty(user_id)
-        board = chess.Board()
-        game_id = create_game(user_id, cor, difficulty)
+    escolha = query.data.split("_")[1]
 
-        jogos[user_id] = {
-            "board": board,
-            "color": cor,
-            "difficulty": difficulty,
-            "game_id": game_id,
-        }
+    # se for aleatório
+    if escolha == "random":
+        cor = random.choice(["white", "black"])
+    else:
+        cor = escolha
 
-        await query.edit_message_text(
-            text=texto_inicio_partida(user_id),
-            parse_mode="Markdown"
-        )
+    difficulty = get_difficulty(user_id)
+    board = chess.Board()
+    game_id = create_game(user_id, cor, difficulty)
 
-        # se joga de pretas, o bot joga primeiro
-        if cor == "black":
-            try:
-                bot_move = stockfish_move(board, difficulty)
-                bot_move_san = board.san(bot_move)
-                board.push(bot_move)
+    jogos[user_id] = {
+        "board": board,
+        "color": cor,
+        "difficulty": difficulty,
+        "game_id": game_id,
+    }
 
-                await enviar_mensagem_jogada_bot(
-                    context=context,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    bot_move=bot_move_san,
-                    mostrar_tabuleiro=False
-                )
+    await query.edit_message_text(
+        text=texto_inicio_partida(user_id),
+        parse_mode="Markdown"
+    )
 
-            except Exception:
-                moves = " ".join([m.uci() for m in board.move_stack])
+    # se jogar de pretas o bot joga primeiro
+    if cor == "black":
+        try:
+            bot_move = stockfish_move(board, difficulty)
+            bot_move_san = board.san(bot_move)
+            board.push(bot_move)
 
-                finish_game(game_id, "unfinished", moves)
+            await enviar_mensagem_jogada_bot(
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                bot_move=bot_move_san,
+                mostrar_tabuleiro=False
+            )
 
-                del jogos[user_id]
+        except Exception:
+            moves = " ".join([m.uci() for m in board.move_stack])
+            finish_game(game_id, "unfinished", moves)
+            del jogos[user_id]
 
-                erro = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ *Erro ao comunicar com o Stockfish.*",
-                    parse_mode="Markdown",
-                    reply_markup=menu_principal()
-                )
+            erro = await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Erro ao comunicar com o Stockfish.*",
+                parse_mode="Markdown",
+                reply_markup=menu_principal()
+            )
 
-                registar_mensagem(user_id, erro.message_id)
+            registar_mensagem(user_id, erro.message_id)
 
-        return
+    return
 
     # ESTATÍSTICAS
     if query.data == "stats":
@@ -1048,8 +1021,6 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # validar formato em notação normal do xadrez (SAN)
-    texto_normalizado = normalizar_san(texto)
-
     try:
         move = board.parse_san(texto_normalizado)
     except Exception:
