@@ -712,62 +712,62 @@ async def botoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ESCOLHER PEÇAS
     if query.data.startswith("cor_"):
-    esperando_resumo.discard(user_id)
-
-    escolha = query.data.split("_")[1]
-
-    # se for aleatório
-    if escolha == "random":
-        cor = random.choice(["white", "black"])
-    else:
-        cor = escolha
-
-    difficulty = get_difficulty(user_id)
-    board = chess.Board()
-    game_id = create_game(user_id, cor, difficulty)
-
-    jogos[user_id] = {
-        "board": board,
-        "color": cor,
-        "difficulty": difficulty,
-        "game_id": game_id,
-    }
-
-    await query.edit_message_text(
-        text=texto_inicio_partida(user_id),
-        parse_mode="Markdown"
-    )
-
-    # se jogar de pretas o bot joga primeiro
-    if cor == "black":
-        try:
-            bot_move = stockfish_move(board, difficulty)
-            bot_move_san = board.san(bot_move)
-            board.push(bot_move)
-
-            await enviar_mensagem_jogada_bot(
-                context=context,
-                chat_id=chat_id,
-                user_id=user_id,
-                bot_move=bot_move_san,
-                mostrar_tabuleiro=False
-            )
-
-        except Exception:
-            moves = " ".join([m.uci() for m in board.move_stack])
-            finish_game(game_id, "unfinished", moves)
-            del jogos[user_id]
-
-            erro = await context.bot.send_message(
-                chat_id=chat_id,
-                text="❌ *Erro ao comunicar com o Stockfish.*",
-                parse_mode="Markdown",
-                reply_markup=menu_principal()
-            )
-
-            registar_mensagem(user_id, erro.message_id)
-
-    return
+        esperando_resumo.discard(user_id)
+    
+        escolha = query.data.split("_")[1]
+    
+        # se for aleatório
+        if escolha == "random":
+            cor = random.choice(["white", "black"])
+        else:
+            cor = escolha
+    
+        difficulty = get_difficulty(user_id)
+        board = chess.Board()
+        game_id = create_game(user_id, cor, difficulty)
+    
+        jogos[user_id] = {
+            "board": board,
+            "color": cor,
+            "difficulty": difficulty,
+            "game_id": game_id,
+        }
+    
+        await query.edit_message_text(
+            text=texto_inicio_partida(user_id),
+            parse_mode="Markdown"
+        )
+    
+        # se jogar de pretas o bot joga primeiro
+        if cor == "black":
+            try:
+                bot_move = stockfish_move(board, difficulty)
+                bot_move_san = board.san(bot_move)
+                board.push(bot_move)
+    
+                await enviar_mensagem_jogada_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    bot_move=bot_move_san,
+                    mostrar_tabuleiro=False
+                )
+    
+            except Exception:
+                moves = " ".join([m.uci() for m in board.move_stack])
+                finish_game(game_id, "unfinished", moves)
+                del jogos[user_id]
+    
+                erro = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ *Erro ao comunicar com o Stockfish.*",
+                    parse_mode="Markdown",
+                    reply_markup=menu_principal()
+                )
+    
+                registar_mensagem(user_id, erro.message_id)
+    
+        return
 
     # ESTATÍSTICAS
     if query.data == "stats":
