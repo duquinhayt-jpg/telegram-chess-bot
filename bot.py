@@ -1022,7 +1022,7 @@ async def jogada(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # validar formato em notação normal do xadrez (SAN)
     try:
-        move = board.parse_san(texto_normalizado)
+        move = board.parse_san(texto)
     except Exception:
         aviso = await context.bot.send_message(
             chat_id=chat_id,
