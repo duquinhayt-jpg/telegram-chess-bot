@@ -409,24 +409,26 @@ def normalizar_san(texto: str) -> str:
     if not texto:
         return texto
 
-    # remover espaços internos tipo "N f3"
     texto = texto.replace(" ", "")
 
-    # roques com letra O ou zero
+    # roque
     t = texto.lower()
     if t in ("o-o", "0-0"):
         return "O-O"
     if t in ("o-o-o", "0-0-0"):
         return "O-O-O"
 
-    # promoção: e8=q -> e8=Q
+    # promoção
     if "=" in texto:
         partes = texto.split("=")
         if len(partes) == 2 and partes[1]:
             texto = partes[0] + "=" + partes[1].upper()
 
-    # primeira letra da peça em maiúscula, se existir
-    if texto and texto[0].lower() in {"k", "q", "r", "b", "n"}:
+    # converter tudo para minúsculas primeiro
+    texto = texto.lower()
+
+    # se começar por peça verdadeira
+    if texto[0] in {"k", "q", "r", "b", "n"}:
         texto = texto[0].upper() + texto[1:]
 
     return texto
